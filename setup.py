@@ -63,14 +63,14 @@ setup(
     keywords=[
         # eg: 'keyword1', 'keyword2', 'keyword3',
     ],
-    python_requires='>=3.12.1',
+    python_requires='>=3.12.2',
     install_requires=[
-        'keri>=1.1.6',
+        'keri @ git+https://git@github.com/provenant-dev/keripy.git@v1.1.33-pr2',
         'multicommand>=1.0.0',
         'requests>=2.28',
-        'http_sfv>=0.9.8',
-        'msgpack>=1.0.4',
-        'cbor2>=5.4.3',
+        'http_sfv>=0.9.9',
+        'msgpack>=1.0.8',
+        'cbor2>=5.6.2',
         'sseclient>=0.0.27'
     ],
     extras_require={
