@@ -150,6 +150,20 @@ class Credentials:
         res = self.client.post(f"/credentials/query", json=json)
         return res.json()
 
+    def get(self, said):
+        """ Get a credential by SAID
+
+        Parameters:
+            said (str): SAID of credential to retrieve
+        Returns:
+            credential (bytes): credential
+
+        """
+        headers = dict(accept="application/json")
+
+        res = self.client.get(f"/credentials/{said}", headers=headers)
+        return res.content
+
     def export(self, said):
         """
 
