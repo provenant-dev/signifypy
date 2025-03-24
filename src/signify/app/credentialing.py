@@ -30,6 +30,10 @@ class Registries:
         """
         self.client = client
 
+    def list(self, name):
+        res = self.client.get(f"/identifiers/{name}/registries")
+        return res.json()
+    
     def get(self, name, registryName):
         res = self.client.get(f"/identifiers/{name}/registries/{registryName}")
         return res.json()
