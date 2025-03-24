@@ -31,4 +31,17 @@ class Contacts:
 
         contacts = res.json()
         return dict(start=0, end=len(contacts), total=len(contacts), contacts=contacts)
+    
+    def get(self, pre):
+        """ Get a contact
+
+        Parameters:
+            pre (str): Prefix of the contact
+        Returns:
+            contact (bytes): contact data
+
+        """
+        
+        res = self.client.get(f"/contacts/{pre}")
+        return res.json()
 

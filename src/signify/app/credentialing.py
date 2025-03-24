@@ -162,7 +162,7 @@ class Credentials:
         headers = dict(accept="application/json")
 
         res = self.client.get(f"/credentials/{said}", headers=headers)
-        return res.content
+        return res.json()
 
     def export(self, said):
         """
