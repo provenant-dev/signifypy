@@ -1,75 +1,84 @@
 # -*- encoding: utf-8 -*-
-"""
-SIGNIFY
-signify.app.challenging module
-
-"""
+"""Challenge generation, response, and verification helpers for SignifyPy."""
 from signify.app.clienting import SignifyClient
 
 
 class Challenges:
-    """ Challenges domain object """
+    """Resource wrapper for challenge generation, response, and verification."""
 
     def __init__(self, client: SignifyClient):
-        """ Create domain class for working with credentials for a single AID
+        """Create a challenge resource bound to one Signify client.
 
-            Parameters:
-                client (SignifyClient): Signify client class for access resources on a KERIA service instance
-
+        Parameters:
+            client (SignifyClient): Signify client used to access KERIA challenge
+                endpoints.
         """
         self.client = client
 
-    def generate(self):
-        """  Request 12 random word challenge phrase from server
+    def generate(self, strength=128):
+        """Request a random challenge phrase from the server.
+
+        Parameters:
+            strength (int): BIP39 entropy strength, typically ``128`` or
+                ``256``.
 
         Returns:
-            list: array of 12 random words
-
+            dict: Challenge payload returned by the remote agent, usually with a
+            ``words`` list.
         """
+        res = self.client.get(f"/challenges?strength={strength}")
+        return res.json()
 
-        res = self.client.get("/challenges")
-        resp = res.json()
-        return resp["words"]
+    def respond(self, name, recipient=None, words=None, recp=None):
+        """Send a signed challenge response to one recipient via peer exchange.
 
-    def respond(self, name, recp, words):
+        ``recipient`` is the TS-compatible parameter name. ``recp`` remains as
+        a compatibility alias for older Python callers.
+        """
+        if recipient is None:
+            recipient = recp
+        if recipient is None:
+            raise ValueError("recipient is required")
+        if words is None:
+            raise ValueError("words are required")
+
         hab = self.client.identifiers().get(name)
         exchanges = self.client.exchanges()
 
         _, _, res = exchanges.send(name, "challenge", sender=hab, route="/challenge/response",
                                    payload=dict(words=words),
-                                   embeds=dict(), recipients=[recp])
+                                   embeds=dict(), recipients=[recipient])
 
         return res
 
     def verify(self, source, words):
-        """ Ask Agent to verify a given sender signed the provided words
+        """Ask the agent to verify that ``source`` signed the given words.
 
         Parameters:
-            source(str): qb64 AID of source of challenge response to check for
-            words(list): list of challenge words to check for
+            source (str): qb64 AID of the signer to verify.
+            words (list): Challenge words expected in the signed response.
         """
 
-        json = dict(
+        body = dict(
             words=words
         )
 
-        res = self.client.post(f"/challenges_verify/{source}", json=json)
+        res = self.client.post(f"/challenges_verify/{source}", json=body)
         return res.json()
 
     def responded(self, source, said):
-        """ Mark challenge response as signed and accepted
+        """Mark a challenge response as reviewed and accepted.
 
         Parameters:
             source (str): qb64 AID of signer
             said (str): qb64 AID of exn message representing the signed response
 
         Returns:
-            bool: True means successful
-
+            bool: ``True`` if the acceptance request was submitted.
         """
-        json = dict(
+        body = dict(
             said=said
         )
 
-        self.client.put(f"/challenges_verify/{source}", json=json)
+        self.client.put(f"/challenges_verify/{source}", json=body)
         return True

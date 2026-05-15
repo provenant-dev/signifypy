@@ -6,11 +6,12 @@ signify.app.test_authing module
 Testing authing with unit tests
 """
 
-from keri import kering
-from keri.core import serdering
-from keri.core.coring import Tiers
-from mockito import mock, unstub, expect, verifyNoUnwantedInteractions
 import pytest
+from keri import kering
+from keri.core import coring, serdering, signing
+from keri.core.coring import Tiers
+from keri.kering import Kinds, versify
+from mockito import mock, unstub, expect, verifyNoUnwantedInteractions
 
 
 def rt(a, b, c):
@@ -44,6 +45,25 @@ def test_verify():
                     strict=True)
 
     authn.verify(rep=mock_rep)
+
+    seen = {}
+
+    def capture_path(_headers, _method, path):
+        seen["path"] = path
+        return True
+
+    authn.verifysig = capture_path
+    mock_request = mock({'method': 'GET',
+                         'url': 'http://example.com/identifiers/name/registries/did:webs_designated_aliases:Eaid',
+                         'headers': {},
+                         'body': "a body for len"},
+                        spec=requests.Request, strict=True)
+    mock_rep = mock({'request': mock_request, 'headers': {"SIGNIFY-RESOURCE": 'EEz01234'}}, spec=requests.Response,
+                    strict=True)
+
+    authn.verify(rep=mock_rep)
+    assert seen["path"] == "/identifiers/name/registries/did%3Awebs_designated_aliases%3AEaid"
+
     verifyNoUnwantedInteractions()
     unstub()
 
@@ -94,13 +114,13 @@ def test_controller(bran):
 
     assert ctrl.tier == Tiers.low
 
-    from keri.core import coring
-    assert type(ctrl.salter) is coring.Salter
-    assert type(ctrl.signer) is coring.Signer
+    from keri.core import signing
+    assert type(ctrl.salter) is signing.Salter
+    assert type(ctrl.signer) is signing.Signer
     assert ctrl.signer.code == "A"
     assert ctrl.signer.qb64 == "AF1iHYsl-7DZFD71kcsg5iUAkLP3Lh_01RZFEHhL3629"
 
-    assert type(ctrl.nsigner) is coring.Signer
+    assert type(ctrl.nsigner) is signing.Signer
     assert ctrl.nsigner.code == "A"
     assert ctrl.nsigner.qb64 == "AGG0prnUWeKJGfh00-rrSqBIxR0Mx5K1FP0XC_UtCdjX"
 
@@ -131,7 +151,7 @@ def test_controller_derive():
     assert serder.raw == raw
 
     from keri.core import coring
-    e1 = dict(v=coring.Vstrings.json,
+    e1 = dict(v=versify(kind=Kinds.json, size=0),
               t="rot",
               d="",
               i="EMPYj-h2OoCyPGQoUUd1tLUYe62YD_8A3jjXxqYawLcV",
@@ -149,8 +169,8 @@ def test_controller_derive():
     
     _, e1 = coring.Saider.saidify(sad=e1)
 
-    from signify.signifying import State
-    state = State(controller={"ee": e1})
+    from signify.signifying import SignifyState
+    state = SignifyState(controller={"ee": e1})
     serder = ctrl.derive(state=state)
 
     assert serder.raw == (b'{"v":"KERI10JSON000160_","t":"rot","d":"ENvjVqUoq2SGDrFSzqI5AI37ZE4IAlKLdFGw'
@@ -160,41 +180,26 @@ def test_controller_derive():
                           b'A3jjXxqYawLcV"],"bt":"0","br":[],"ba":[],"a":[]}')
 
 
-def test_approve_delegation():
+def test_approve_delegation_builds_expected_interact_event():
     from signify.core.authing import Controller
     ctrl = Controller(bran="abcdefghijklmnop01234", tier=Tiers.low)
 
-    mock_agent = mock({
-        'said': 'said',
-        'pre': 'pre',
-        'sn': 1,
-    })
+    class Agent:
+        pre = "pre"
+        sn = 1
+        said = "said"
 
-    from keri.core import coring
-    e1 = dict(v=coring.Vstrings.json,
-              d="",
-              i="ABCDEFG",
-              s="1",
-              t="int")
-    _, e1 = coring.Saider.saidify(sad=e1)
+    serder, sig = ctrl.approveDelegation(agent=Agent())
 
-    from keri.core import eventing
-    expect(eventing, times=1).interact(
-        pre="EMPYj-h2OoCyPGQoUUd1tLUYe62YD_8A3jjXxqYawLcV", 
-        dig="EMPYj-h2OoCyPGQoUUd1tLUYe62YD_8A3jjXxqYawLcV", 
-        sn=1,
-        data=[{'i': 'pre', 's': '1', 'd': 'said'}]).thenReturn(serdering.SerderKERI(sad=e1))
-
-    serder, sig = ctrl.approveDelegation(agent=mock_agent)
-    
-    assert serder.raw == b'{"v":"KERI10JSON00006c_","d":"EAnymWG0hPrDWRxKNyYxuHqZle6sT5y_QlW8pf_SfyOu","i":"ABCDEFG","s":"1","t":"int"}'
-    assert sig[0] == "AAD3uTIT98auX5wgbXxq7PnO95vyxMAJ-JWd_PalgDWRyhzkg-0B_hHPh3TAP8dknnwMcBnRjwIDD87YLQOmLL0P"
-
-    verifyNoUnwantedInteractions()
-    unstub()
+    assert serder.ked["t"] == "ixn"
+    assert serder.ked["i"] == ctrl.pre
+    assert serder.ked["s"] == "1"
+    assert serder.ked["a"] == [{'i': 'pre', 's': '1', 'd': 'said'}]
+    assert len(sig) == 1
+    assert isinstance(sig[0], str)
 
 
-def test_approve_delegation(): 
+def test_approve_delegation_returns_controller_signature(): 
     from signify.core.authing import Controller
     from keri.core.coring import Tiers
     ctrl = Controller(bran="abcdefghijklmnop01234", tier=Tiers.low)
@@ -262,48 +267,88 @@ def test_controller_rotate_salty():
     assert 'ELUvZ8aJEHAQE-0nsevyYTP98rBbGJUrTj5an-pCmwrK' in out['keys']
     assert 'sxlt' in out['keys']['ELUvZ8aJEHAQE-0nsevyYTP98rBbGJUrTj5an-pCmwrK'] # type: ignore
     assert out['keys']['ELUvZ8aJEHAQE-0nsevyYTP98rBbGJUrTj5an-pCmwrK']['sxlt'] != "1AAH2R_SPhr_5vIBGGtyVamaGVDQAcYlgmwDOkJwM-q6Qw8K5NT7jLzJ0k6_7sa3oyKK33ym8JX1Il4MoUiy8ixYwsVWYhaU3sMT" # type: ignore
+    assert signing.Cipher(qb64=out["sxlt"]).code == coring.MtrDex.X25519_Cipher_Salt
+    assert signing.Cipher(qb64=out["keys"]["ELUvZ8aJEHAQE-0nsevyYTP98rBbGJUrTj5an-pCmwrK"]["sxlt"]).code == coring.MtrDex.X25519_Cipher_Salt
 
-# def test_controller_rotate_randy():
-#     from keri.core.coring import Tiers
-#     from signify.core.authing import Controller
-#     ctrl = Controller(bran="abcdefghijklmnop01234", tier=Tiers.low)
 
-#     from keri.core.coring import Salter
-#     mock_salter = mock({'qb64': 'salter qb64'}, spec=Salter, strict=True)
-#     ctrl.salter = mock_salter
+def test_ctlr_rotate_migrates_on_write_4C_to_1AAH_salty_sxlt_cipher():
+    from keri.app import keeping
+    from signify.core.authing import Controller
 
-#     from signify.core.keeping import SaltyCreator
-#     mock_creator = mock({'create': lambda ridx, tier : None}, spec=SaltyCreator, strict=True)
-#     from signify.core import keeping
-#     when(keeping).SaltyCreator(salt='salter qb64', stem='signify:controller', tier=Tiers.low).thenReturn(mock_creator)
+    ctrl = Controller(bran="abcdefghijklmnop01234", tier=Tiers.low)
+    signer = ctrl.salter.signer(transferable=False)
+    encrypter = signing.Encrypter(verkey=signer.verfer.qb64)
+    aid_salter = signing.Salter(raw=b'fedcba9876543210')
+    creator = keeping.SaltyCreator(salt=aid_salter.qb64, stem="signify:aid", tier=Tiers.low)
+    signers = creator.create(codes=["A"], pidx=0, kidx=0, transferable=False)
 
-#     from keri.core.coring import Signer
-#     mock_signer = mock(spec=Signer, strict=True)
-#     ctrl.signer = mock_signer
-#     mock_nsigner = mock(spec=Signer, strict=True)
-#     ctrl.nsigner = mock_nsigner
-#     ctrl.keys = ['a key']
-#     from keri.core.coring import Diger
-#     mock_diger = mock(spec=Diger, strict=True)
-#     ctrl.ndigs = [mock_diger]
+    # Cipher starts as 4C due to KERIpy Encrypter.encrypt default.
+    sxlt = encrypter.encrypt(ser=aid_salter.qb64).qb64
+    prefix = "legacy-pre"
 
-#     from keri.core.serdering import Serder
-#     mock_serder = mock(spec=Serder, strict=True)
-#     ctrl.serder = mock_serder
+    assert signing.Cipher(qb64=sxlt).code == coring.MtrDex.X25519_Cipher_L0
 
-#     # end controller mock setup
-#     assert ctrl.bran == '0AAabcdefghijklmnop01234'
+    aid = {
+        "name": "aid1",
+        "prefix": prefix,
+        "salty": {
+            "pidx": 0,
+            "stem": "signify:aid",
+            "sxlt": sxlt,
+            "tier": Tiers.low,
+            "icodes": ["A"],
+            "kidx": 0,
+            "transferable": False,
+        },
+        "state": {
+            "k": [signer.verfer.qb64 for signer in signers],
+        },
+    }
+    # Rotate will read the 4C encoded CESR primitive and migrate it on-write to the 1AAH code
+    # that is compatible with SignifyTS.
+    out = ctrl.rotate(nbran="0123456789abcdefghijk", aids=[aid])
 
-#     # mocks for rotate
-#     when(mock_salter).signer(transferable=False).thenReturn(mock_nsigner)
-#     mock_nsalter = mock(spec=Salter, strict=True)
-#     from keri.core import coring
-#     when(coring).Salter(qb64='0AA0123456789abcdefghijk').thenReturn(mock_nsalter)
+    assert signing.Cipher(qb64=out["sxlt"]).code == coring.MtrDex.X25519_Cipher_Salt
+    assert signing.Cipher(qb64=out["keys"][prefix]["sxlt"]).code == coring.MtrDex.X25519_Cipher_Salt
 
-    # from signify.core.keeping import SaltyCreator
-    # mock_ncreator = mock(spec=SaltyCreator, strict=True)
+def test_controller_rotate_randy():
+    from signify.core.authing import Controller
+    from signify.core.keeping import RandyKeeper
+    ctrl = Controller(bran="abcdefghijklmnop01234", tier=Tiers.low)
 
-    # from signify.core import keeping
-    # expect(keeping, times=1).SaltyCreator(salt='salter qb64', stem='signify:controller', tier=Tiers.low).thenReturn(mock_ncreator)
+    keeper = RandyKeeper(ctrl.salter, transferable=True)
+    pubs, digers = keeper.incept(transferable=True)
 
-    # ctrl.rotate(nbran="0123456789abcdefghijk", aids=["aid_one"],) 
+    aid = {
+        "name": "aid1",
+        "prefix": "ELUvZ8aJEHAQE-0nsevyYTP98rBbGJUrTj5an-pCmwrK",
+        "randy": keeper.params(),
+        "state": {
+            "k": pubs,
+        },
+    }
+
+    old_prxs = list(aid["randy"]["prxs"])
+    old_nxts = list(aid["randy"]["nxts"])
+
+    out = ctrl.rotate(nbran="0123456789abcdefghijk", aids=[aid])
+
+    rotated = out["keys"]["ELUvZ8aJEHAQE-0nsevyYTP98rBbGJUrTj5an-pCmwrK"]
+    assert rotated["prxs"] != old_prxs
+    assert rotated["nxts"] != old_nxts
+
+    from keri.core import coring, signing
+    signer = ctrl.salter.signer(transferable=False)
+    decrypter = signing.Decrypter(seed=signer.qb64)
+
+    signers = [
+        decrypter.decrypt(cipher=signing.Cipher(qb64=prx), transferable=True)
+        for prx in rotated["prxs"]
+    ]
+    assert [signer.verfer.qb64 for signer in signers] == pubs
+
+    nsigners = [
+        decrypter.decrypt(cipher=signing.Cipher(qb64=nxt), transferable=True)
+        for nxt in rotated["nxts"]
+    ]
+    assert [coring.Diger(ser=nsigner.verfer.qb64b).qb64 for nsigner in nsigners] == digers

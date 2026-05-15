@@ -4,21 +4,37 @@ SIGNIFY
 signify.core.authing module
 
 """
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from keri import kering
 from keri.app import keeping
-from keri.core import coring, eventing, serdering
-
+from keri.core import coring, eventing, serdering, signing
 from keri.end import ending
-from signify.signifying import State
+
+from signify.signifying import SignifyState
 
 
 class Agent:
+    """
+    Agent class representing a KERIA agent delegated to by a Signify controller Client AID (caid).
+    """
+
     def __init__(self, state):
-        self.pre = ""
+        """
+        Create an Agent instance
+        Parameters:
+            state (dict): agent inception event state
+
+        Attributes:
+            delpre (str): qb64 prefix of the delegating controller, the Client AID
+            said (str): qb64 said of the agent inception event
+            pre (str): qb64 prefix of the agent
+            sn (int): sequence number of the agent inception event
+            verfer (coring.Verfer): verfer of the agent
+        """
         self.delpre = ""
         self.said = ""
+        self.pre = ""
         self.sn = 0
         self.verfer = None
 
@@ -37,7 +53,30 @@ class Agent:
 
 
 class Controller:
+    """
+    Controller class representing a Signify controller Client AID (caid) that delegates to a KERIA Agent AID.
+    """
     def __init__(self, bran, tier, state=None):
+        """
+        Create a Controller instance. Stretches the passcode to create a qb64 salt for the controller and then creates
+        the controller's signing and next signing keys. If state is provided, the controller is created from the state.
+
+        Parameters:
+            bran (str | bytes): passcode for the controller
+            tier (str): tier of the controller
+            state (dict): controller inception event state
+
+        Attributes:
+            bran (str | bytes): qb64 salt for the controller
+            stem (str): string prefix to be used when stretching the cryptographic seed (passcode) into keypairs
+            tier (str): security tier of the controller (low, med, high)
+            salter (coring.Salter): salter for the controller
+            signer (keeping.Signer): signer of the controller
+            nsigner (keeping.Signer): next signer of the controller
+            keys (list): list of controller's signing keys
+            ndigs (list): list of controller's next signing keys
+            serder (serdering.SerderKERI): serder of the controller
+        """
         if hasattr(bran, "decode"):
             bran = bran.decode("utf-8")
 
@@ -45,7 +84,7 @@ class Controller:
         self.stem = "signify:controller"
         self.tier = tier
 
-        self.salter = coring.Salter(qb64=self.bran)
+        self.salter = signing.Salter(qb64=self.bran)
         creator = keeping.SaltyCreator(salt=self.salter.qb64, stem=self.stem, tier=tier)
 
         self.signer = creator.create(ridx=0, tier=tier).pop()
@@ -73,7 +112,7 @@ class Controller:
                                    code=coring.MtrDex.Blake3_256,
                                    toad="0",
                                    wits=[])
-        elif type(state) is State:
+        elif type(state) is SignifyState:
             return serdering.SerderKERI(sad=state.controller['ee'])
 
     def approveDelegation(self, agent):
@@ -82,6 +121,27 @@ class Controller:
 
         self.serder = eventing.interact(pre=self.serder.pre, dig=self.serder.said, sn=self.serder.sn + 1, data=[anchor])
         return self.serder, [self.signer.sign(self.serder.raw, index=0).qb64]
+
+    def _decryptSaltQb64(self, decrypter, cipher):
+        """
+        Support decrypting both Salter and Streamer codes
+        Salter are fixed size, 1AAH class salts and variable size are Streamer 4C class codes.
+
+        Returns:
+            salt as qualified base 64 whether a Salter or Streamer primitive
+        """
+        plain = decrypter.decrypt(cipher=cipher, bare=True)
+        qb64 = plain.decode("utf-8") if hasattr(plain, "decode") else plain
+
+        try:
+            salter = signing.Salter(qb64=qb64)
+        except Exception as ex:
+            raise kering.ValidationError("decrypted sxlt is not a Salt_128") from ex
+
+        if salter.qb64 != qb64:
+            raise kering.ValidationError("decrypted sxlt must contain exactly one Salt_128")
+
+        return qb64
 
     def rotate(self, nbran, aids):
         """
@@ -118,7 +178,7 @@ class Controller:
 
         # First we create the new salter and then use it to encrypted the OLD salt
         nbran = coring.MtrDex.Salt_128 + 'A' + nbran[:21]  # qb64 salt for seed
-        nsalter = coring.Salter(qb64=nbran)
+        nsalter = signing.Salter(qb64=nbran)
         nsigner = self.salter.signer(transferable=False)
 
         # This is the previous next signer so it will be used to sign the rotation and then have 0 signing authority
@@ -143,11 +203,12 @@ class Controller:
 
         sigs = [signer.sign(ser=rot.raw, index=1, ondex=0).qb64, self.signer.sign(ser=rot.raw, index=0).qb64]
 
-        encrypter = coring.Encrypter(verkey=nsigner.verfer.qb64)  # encrypter for new salt
-        decrypter = coring.Decrypter(seed=nsigner.qb64)  # decrypter with old salt
+        encrypter = signing.Encrypter(verkey=nsigner.verfer.qb64)  # encrypter for new salt
+        decrypter = signing.Decrypter(seed=nsigner.qb64)  # decrypter with old salt
 
         # First encrypt and save old Salt in case we need a recovery
-        sxlt = encrypter.encrypt(matter=coring.Matter(qb64b=self.bran)).qb64
+        sxlt = encrypter.encrypt(prim=coring.Matter(qb64b=self.bran),
+                                 code=coring.MtrDex.X25519_Cipher_Salt).qb64
 
         data = dict(
             rot=rot.ked,
@@ -161,8 +222,8 @@ class Controller:
             pre = aid["prefix"]
             if "salty" in aid:
                 salty = aid["salty"]
-                cipher = coring.Cipher(qb64=salty["sxlt"])
-                dnxt = decrypter.decrypt(cipher=cipher).qb64
+                cipher = signing.Cipher(qb64=salty["sxlt"])
+                dnxt = self._decryptSaltQb64(decrypter, cipher)
 
                 # Now we have the AID salt, use it to verify against the current public keys
                 acreator = keeping.SaltyCreator(dnxt, stem=salty["stem"], tier=salty["tier"])
@@ -172,7 +233,8 @@ class Controller:
                 if pubs != [signer.verfer.qb64 for signer in signers]:
                     raise kering.ValidationError(f"unable to rotate, validation of salt to public keys {pubs} failed")
 
-                asxlt = encrypter.encrypt(matter=coring.Matter(qb64=dnxt)).qb64
+                asxlt = encrypter.encrypt(prim=coring.Matter(qb64=dnxt),
+                                          code=coring.MtrDex.X25519_Cipher_Salt).qb64
                 keys[pre] = dict(
                     sxlt=asxlt
                 )
@@ -185,10 +247,10 @@ class Controller:
                 nprxs = []
                 signers = []
                 for prx in prxs:
-                    cipher = coring.Cipher(qb64=prx)
+                    cipher = signing.Cipher(qb64=prx)
                     dsigner = decrypter.decrypt(cipher=cipher, transferable=True)
                     signers.append(dsigner)
-                    nprxs.append(encrypter.encrypt(matter=coring.Matter(qb64=dsigner.qb64)).qb64)
+                    nprxs.append(encrypter.encrypt(prim=coring.Matter(qb64=dsigner.qb64)).qb64)
 
                 pubs = aid["state"]["k"]
                 if pubs != [signer.verfer.qb64 for signer in signers]:
@@ -198,16 +260,16 @@ class Controller:
                 for nxt in nxts:
                     nnxts.append(self.recrypt(nxt, decrypter, encrypter))
 
-                keys[pre] = dict(prxs=nprxs, nxts=nxts)
+                keys[pre] = dict(prxs=nprxs, nxts=nnxts)
 
         data["keys"] = keys
         return data
 
     @staticmethod
-    def recrypt(enc, decrypter, encrypter):
-        cipher = coring.Cipher(qb64=enc)
+    def recrypt(enc, decrypter: signing.Decrypter, encrypter: signing.Encrypter):
+        cipher = signing.Cipher(qb64=enc)
         dnxt = decrypter.decrypt(cipher=cipher).qb64
-        return encrypter.encrypt(matter=coring.Matter(qb64=dnxt)).qb64
+        return encrypter.encrypt(prim=coring.Matter(qb64=dnxt)).qb64
 
 
 class Authenticater:
@@ -237,7 +299,7 @@ class Authenticater:
             raise kering.AuthNError("No valid signature from agent on response.")
 
         resource = rep.headers["SIGNIFY-RESOURCE"]
-        if resource != self.agent.pre or not self.verifysig(rep.headers, rep.request.method, url.path):
+        if resource != self.agent.pre or not self.verifysig(rep.headers, rep.request.method, quote(url.path)):
             raise kering.AuthNError("No valid signature from agent on response.")
 
     def verifysig(self, headers, method, path):
