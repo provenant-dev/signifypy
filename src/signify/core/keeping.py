@@ -10,7 +10,7 @@ import importlib
 
 from keri import kering
 from keri.app import keeping
-from keri.core import coring
+from keri.core import coring, signing
 from keri.core.coring import Tiers, MtrDex
 
 
@@ -78,6 +78,7 @@ class Manager:
 
 
 class BaseKeeper:
+    """Base Keystore class for all Keeper types"""
 
     @property
     def algo(self):
@@ -125,6 +126,10 @@ class BaseKeeper:
                 cigars.append(signer.sign(ser))  # assigns .verfer to cigar
             return [cigar.qb64 for cigar in cigars]
 
+    def signers(self):
+        """Return the active current signers for this keeper."""
+        raise NotImplementedError("keeper does not expose current signers")
+
 
 class SaltyKeeper(BaseKeeper):
     """
@@ -171,8 +176,8 @@ class SaltyKeeper(BaseKeeper):
         # Salter is the entered passcode and used for enc/dec of salts for each AID
         signer = salter.signer(transferable=False)
         self.aeid = signer.verfer.qb64
-        self.encrypter = coring.Encrypter(verkey=self.aeid)
-        self.decrypter = coring.Decrypter(seed=signer.qb64)
+        self.encrypter = signing.Encrypter(verkey=self.aeid)
+        self.decrypter = signing.Decrypter(seed=signer.qb64)
 
         self.tier = tier
         self.icodes = icodes
@@ -187,14 +192,21 @@ class SaltyKeeper(BaseKeeper):
         if bran is not None:
             bran = coring.MtrDex.Salt_128 + 'A' + bran[:21]
             self.creator = keeping.SaltyCreator(salt=bran, stem=stem, tier=tier)
-            self.sxlt = self.encrypter.encrypt(self.creator.salt).qb64
+            self.sxlt = self.encrypter.encrypt(ser=self.creator.salt,
+                                               code=coring.MtrDex.X25519_Cipher_Salt).qb64
         elif sxlt is None:
             self.creator = keeping.SaltyCreator(stem=stem, tier=tier)
-            self.sxlt = self.encrypter.encrypt(self.creator.salt).qb64
+            self.sxlt = self.encrypter.encrypt(ser=self.creator.salt,
+                                               code=coring.MtrDex.X25519_Cipher_Salt).qb64
         else:
             self.sxlt = sxlt
-            ciph = coring.Cipher(qb64=self.sxlt)
-            self.creator = keeping.SaltyCreator(self.decrypter.decrypt(cipher=ciph).qb64, stem=stem, tier=tier)
+            ciph = signing.Cipher(qb64=self.sxlt)
+            decrypted = self.decrypter.decrypt(cipher=ciph)
+            if hasattr(decrypted, 'text'):
+                decrypted_salt = decrypted.text
+            else:
+                decrypted_salt = decrypted.qb64
+            self.creator = keeping.SaltyCreator(decrypted_salt, stem=stem, tier=tier)
 
     def params(self):
         """ Get AID parameters to store externally """
@@ -258,7 +270,7 @@ class SaltyKeeper(BaseKeeper):
 
         return verfers, digers
 
-    def sign(self, ser, indexed=True, indices=None, ondices=None):
+    def sign(self, ser, indexed=True, indices=None, ondices=None, **_):
         """ Sign provided data using the current signing keys for AID
 
         Args:
@@ -276,6 +288,11 @@ class SaltyKeeper(BaseKeeper):
 
         return self.__sign__(ser, signers=signers, indexed=indexed, indices=indices, ondices=ondices)
 
+    def signers(self):
+        """Return signer objects for the keeper's current signing keys."""
+        return self.creator.create(codes=self.icodes, pidx=self.pidx, kidx=self.kidx,
+                                   transferable=self.transferable)
+
 
 class RandyKeeper(BaseKeeper):
     def __init__(self, salter, code=MtrDex.Ed25519_Seed, count=1, icodes=None, transferable=False,
@@ -289,8 +306,8 @@ class RandyKeeper(BaseKeeper):
 
         signer = salter.signer(transferable=False)
         self.aeid = signer.verfer.qb64
-        self.encrypter = coring.Encrypter(verkey=self.aeid)
-        self.decrypter = coring.Decrypter(seed=signer.qb64)
+        self.encrypter = signing.Encrypter(verkey=self.aeid)
+        self.decrypter = signing.Decrypter(seed=signer.qb64)
 
         self.prxs = prxs
         self.nxts = nxts
@@ -312,35 +329,54 @@ class RandyKeeper(BaseKeeper):
     def incept(self, transferable):
         self.transferable = transferable
         signers = self.creator.create(codes=self.icodes, transferable=transferable)
-        self.prxs = [self.encrypter.encrypt(matter=signer).qb64 for signer in signers]
+        self.prxs = [self.encrypter.encrypt(prim=signer).qb64 for signer in signers]
 
         verfers = [signer.verfer.qb64 for signer in signers]
 
         nsigners = self.creator.create(codes=self.ncodes, transferable=transferable)
-        self.nxts = [self.encrypter.encrypt(matter=signer).qb64 for signer in nsigners]
+        self.nxts = [self.encrypter.encrypt(prim=signer).qb64 for signer in nsigners]
         digers = [coring.Diger(ser=nsigner.verfer.qb64b, code=self.dcode).qb64 for nsigner in nsigners]
         return verfers, digers
 
     def rotate(self, ncodes, transferable, **_):
         self.transferable = transferable
         self.prxs = self.nxts
-        signers = [self.decrypter.decrypt(cipher=coring.Cipher(qb64=nxt),
-                                          transferable=self.transferable) for nxt in self.nxts]
+        signers = [self.decrypter.decrypt(cipher=signing.Cipher(qb64=nxt), transferable=self.transferable) for nxt in self.nxts]
         verfers = [signer.verfer.qb64 for signer in signers]
 
         nsigners = self.creator.create(codes=ncodes, transferable=transferable)
-        self.nxts = [self.encrypter.encrypt(matter=signer).qb64 for signer in nsigners]
+        self.nxts = [self.encrypter.encrypt(prim=signer).qb64 for signer in nsigners]
         digers = [coring.Diger(ser=nsigner.verfer.qb64b, code=self.dcode).qb64 for nsigner in nsigners]
 
         return verfers, digers
 
     def sign(self, ser, indexed=True, indices=None, ondices=None, **_):
-        signers = [self.decrypter.decrypt(ser=coring.Cipher(qb64=prx).qb64b, transferable=self.transferable)
+        signers = [self.decrypter.decrypt(cipher=signing.Cipher(qb64=prx), transferable=self.transferable)
                    for prx in self.prxs]
         return self.__sign__(ser, signers=signers, indexed=indexed, indices=indices, ondices=ondices)
 
+    def signers(self):
+        """Return signer objects decrypted from the keeper's current key set."""
+        return [self.decrypter.decrypt(cipher=signing.Cipher(qb64=prx), transferable=self.transferable)
+                for prx in self.prxs]
+
 
 class GroupKeeper(BaseKeeper):
+    """Map group signing indexes onto the local member AID's keeper.
+
+    A group keeper does not own group private keys. It receives group event key
+    lists from multisig ``states``/``rstates`` and delegates actual signing to
+    the local member habitat. ``rstates`` supply proposed next digests for the
+    event being built; they are not the signer authorization set.
+
+    For rotations, KERI dual-index signatures expose two positions: ``index``
+    in the event's current key list, and ``ondex`` in the prior establishment
+    event's next digest list. For inception, interaction, and other
+    non-rotation payloads, signatures satisfy only the current signing
+    threshold and do not expose ``ondex``. Direct low-level callers signing a
+    group rotation must pass ``rotated=True``; normal API callers get that from
+    ``Identifiers.rotate``.
+    """
 
     def __init__(self, mgr: Manager, mhab=None, states=None, rstates=None,
                  keys=None, ndigs=None):
@@ -354,6 +390,11 @@ class GroupKeeper(BaseKeeper):
 
         self.gkeys = keys
         self.gdigs = ndigs
+        # Group prior next digests authorize the next rotation. On load,
+        # persisted group ndigs are expected to be the current establishment
+        # event's next digest list. On inception there is no separate prior
+        # event, so gpndigs starts as the same list as gdigs.
+        self.gpndigs = self.gdigs
         self.mhab = mhab
 
     def incept(self, **_):
@@ -365,15 +406,45 @@ class GroupKeeper(BaseKeeper):
 
         return self.gkeys, self.gdigs
 
-    def sign(self, ser, indexed=True, **_):
+    def sign(self, ser, indexed=True, rotated=False, **_):
         key = self.mhab['state']['k'][0]
-        ndig = self.mhab['state']['n'][0]
 
         csi = self.gkeys.index(key)
-        pni = self.gdigs.index(ndig)
+        if rotated:
+            # Rotation signatures must expose the signer's position in the
+            # prior establishment event's precommitted next digest list.
+            pni = self._priorNextIndexForKey(key)
+        else:
+            # Non-rotation signatures are current-only. The event's `n` field
+            # is a precommitment for a future rotation, not an authorization
+            # set for deriving `ondex`.
+            pni = None
         mkeeper = self.mgr.get(self.mhab)
 
         return mkeeper.sign(ser, indexed=indexed, indices=[csi], ondices=[pni])
+
+    def _priorNextIndexForKey(self, key):
+        """Return the prior-next index for the supplied current signing key.
+
+        During rotation, KERI validators compare the signer key against the
+        prior establishment event's precommitted next digests. The digest code
+        comes from each prior next digest, so mirror that lookup locally before
+        producing the dual-index signature.
+        """
+        for idx, pdig in enumerate(self.gpndigs or []):
+            prior = coring.Diger(qb64=pdig)
+            verfer = coring.Verfer(qb64=key)
+            exposed = coring.Diger(ser=verfer.qb64b, code=prior.code).qb64
+            if exposed == pdig:
+                return idx
+
+        raise ValueError(
+            "current signing key is not committed in the group prior next digests"
+        )
+
+    def signers(self):
+        """Return the current signers for the member habitat backing this group."""
+        return self.mgr.get(self.mhab).signers()
 
     def params(self):
         return dict(
