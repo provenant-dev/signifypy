@@ -1,22 +1,18 @@
 # -*- encoding: utf-8 -*-
-"""
-SIGNIFY
-signify.app.grouping module
-
-"""
+"""Multisig group coordination helpers for SignifyPy."""
 
 from signify.app.clienting import SignifyClient
 
 
 class Groups:
-    """ Domain class for performing operations on and with group multisig AIDs """
+    """Resource wrapper for multisig group coordination endpoints."""
 
     def __init__(self, client: SignifyClient):
-        """ Create domain class for working with credentials for a single AID
+        """Create a multisig group resource bound to one Signify client.
 
-            Parameters:
-                client (SignifyClient): Signify client class for access resources on a KERIA service instance
-
+        Parameters:
+            client (SignifyClient): Signify client used to access KERIA multisig
+                endpoints.
         """
         self.client = client
 
@@ -36,6 +32,10 @@ class Groups:
         res = self.client.get(f"/multisig/request/{said}")
         return res.json()
 
+    def getRequest(self, said):
+        """Compatibility alias for :meth:`get_request`."""
+        return self.get_request(said)
+
     def send_request(self, name, exn, sigs, atc):
         """ Send multisig exn peer-to-peer message to other members of the multisig group
 
@@ -52,26 +52,29 @@ class Groups:
         body = dict(
             exn=exn,
             sigs=sigs,
-            atc=atc.decode("utf-8")
+            atc=atc.decode("utf-8") if isinstance(atc, bytes) else atc
         )
 
         res = self.client.post(f"/identifiers/{name}/multisig/request", json=body)
         return res.json()
 
+    def sendRequest(self, name, exn, sigs, atc):
+        """Compatibility alias for :meth:`send_request`."""
+        return self.send_request(name, exn, sigs, atc)
+
     def join(self, name, rot, sigs, gid, smids, rmids):
-        """
+        """Submit a multisig join approval using a received proposal event.
 
         Parameters:
-            name:
-            rot:
-            sigs:
-            gid:
-            smids:
-            rmids:
+            name (str): Local member alias submitting the join approval.
+            rot (SerderKERI): Embedded proposal event being approved.
+            sigs (list): Signatures over the embedded event.
+            gid (str): Group identifier prefix.
+            smids (list[str]): Signing member AIDs.
+            rmids (list[str]): Rotating member AIDs.
 
         Returns:
-            dict: Operation
-
+            dict: Operation payload returned by KERIA.
         """
 
         body = dict(

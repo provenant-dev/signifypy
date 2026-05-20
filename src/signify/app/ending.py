@@ -1,19 +1,17 @@
 # -*- encoding: utf-8 -*-
-"""
-SIGNIFY
-signify.app.ending module
-
-"""
+"""Endpoint-role authorization read helpers for SignifyPy."""
 from signify.app.clienting import SignifyClient
 
 
 class EndRoleAuthorizations:
-    """ Domain class for accessing Endpoint Role Authorizations """
+    """Resource wrapper for listing endpoint-role authorization records."""
 
     def __init__(self, client: SignifyClient):
+        """Create an end-role resource bound to one Signify client."""
         self.client = client
 
     def list(self, name=None, aid=None, role=None):
+        """List endpoint-role authorizations by identifier alias or AID."""
         if name is not None:
             path = f"/identifiers/{name}/endroles"
         elif aid is not None:
@@ -26,4 +24,3 @@ class EndRoleAuthorizations:
 
         res = self.client.get(path)
         return res.json()
-

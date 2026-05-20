@@ -1,12 +1,9 @@
 # -*- encoding: utf-8 -*-
-"""
-keri.kli.commands module
-
-"""
+"""Entry point for the lightweight SignifyPy CLI command tree."""
 import multicommand
 from keri import help
-
 from keri.app import directing
+
 from signify.app.cli import commands
 
 logger = help.ogler.getLogger()
