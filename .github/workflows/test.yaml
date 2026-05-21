@@ -32,18 +32,18 @@ jobs:
 
     steps:
       - name: Stage 1 - Check out SignifyPy
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           path: signifypy
       - name: Stage 2 - Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: |
             signifypy/pyproject.toml
       - name: Stage 2.5 - Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8
         with:
           version: "0.6.14"
       # This is needed so MacOS can find the libsodium library installed by Homebrew
@@ -55,7 +55,7 @@ jobs:
           echo "DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
       - name: Stage 4 - Restore cached unit virtualenv
         id: cache-unit-venv
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
         with:
           # SignifyPy keeps a repo-local venv because the integration harness
           # depends on concrete interpreter paths like `../signifypy/venv`.
@@ -95,33 +95,33 @@ jobs:
       # Keep that topology intact here so CI exercises the same layout as local
       # maintainer runs.
       - name: Stage 1 - Check out SignifyPy
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           path: signifypy
 
       - name: Stage 1 - Check out KERIpy
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           repository: WebOfTrust/keripy
           ref: ${{ env.KERIPY_REF }}
           path: keripy
 
       - name: Stage 1 - Check out KERIA
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           repository: WebOfTrust/keria
           ref: ${{ env.KERIA_REF }}
           path: keria
 
       - name: Stage 1 - Check out vLEI
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           repository: WebOfTrust/vLEI
           ref: ${{ env.VLEI_REF }}
           path: vLEI
 
       - name: Stage 2 - Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           # The live stack spans three repo-local Python environments. Pip
@@ -137,7 +137,7 @@ jobs:
             vLEI/requirements.txt
             vLEI/setup.py
       - name: Stage 2.5 - Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8
         with:
           version: "0.6.14"
 
@@ -150,7 +150,7 @@ jobs:
 
       - name: Stage 4 - Restore cached live-stack virtualenvs
         id: cache-live-venvs
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
         with:
           # Cache the three repo-local virtualenvs as a unit because the live
           # harness expects fixed interpreter locations for SignifyPy, KERIA,
@@ -222,7 +222,7 @@ jobs:
 
       - name: Stage 10 - Upload integration logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           # Preserve witness/KERIA/vLEI logs even on red runs so maintainers can
           # debug backend startup and runtime failures without rerunning locally.
